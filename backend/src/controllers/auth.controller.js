@@ -1,9 +1,9 @@
 import crypto, { randomUUID } from "crypto";
-import { eq, and, gt } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import { comparePassword, hashPassword } from "../lib/bcrypt.js";
+import { db } from "../lib/db.js";
 import { generateToken } from "../lib/jwt.js";
 import { sendConfirmationEmail } from "../lib/mailer.js";
-import { db } from "../lib/db.js";
 import { users } from "../lib/schema.js";
 
 export const signup = async (req, res, next) => {
@@ -31,6 +31,7 @@ export const signup = async (req, res, next) => {
         email,
         password: hashedPassword,
         telephone,
+        emailConfirmed: true, // Auto-confirm email
       })
       .returning({
         id: users.id,
@@ -41,26 +42,14 @@ export const signup = async (req, res, next) => {
         createdAt: users.createdAt,
       });
 
-    // Generate email confirmation token
-    const confirmationToken = crypto.randomBytes(32).toString("hex");
-    const confirmationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+    // Generate token for auto-login
+    const token = generateToken(user.id);
 
-    await db
-      .update(users)
-      .set({ confirmationToken, confirmationTokenExpires })
-      .where(eq(users.id, user.id));
-
-    // Send confirmation email (best-effort)
-    try {
-      await sendConfirmationEmail(user, confirmationToken);
-    } catch (err) {
-      console.error("Failed to send confirmation email:", err);
-    }
-
-    // Do NOT auto-login — require email confirmation
+    // Return user and token immediately
     res.status(201).json({
-      message:
-        "Inscription réussie. Vérifiez votre email pour confirmer votre compte.",
+      message: "Inscription réussie",
+      user,
+      token,
     });
   } catch (error) {
     next(error);
@@ -85,14 +74,6 @@ export const signin = async (req, res, next) => {
 
     if (!isValidPassword) {
       return res.status(401).json({ error: "Email ou mot de passe incorrect" });
-    }
-
-    // Check email confirmation
-    if (!user.emailConfirmed) {
-      return res.status(403).json({
-        error:
-          "Veuillez confirmer votre adresse email avant de vous connecter. Un email de confirmation vous a été envoyé.",
-      });
     }
 
     // Generate token
@@ -266,7 +247,9 @@ export const resendConfirmation = async (req, res, next) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: "Email manquant" });
 
-    const user = await db.query.users.findFirst({ where: eq(users.email, email) });
+    const user = await db.query.users.findFirst({
+      where: eq(users.email, email),
+    });
     if (!user)
       return res.status(200).json({
         message: "Si l'email existe, un email de confirmation a été envoyé",

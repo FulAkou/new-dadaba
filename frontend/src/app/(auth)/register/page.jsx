@@ -14,6 +14,7 @@ import toast from "react-hot-toast";
 
 export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
+
   const router = useRouter();
 
   const {
@@ -28,7 +29,7 @@ export default function RegisterPage() {
     setIsLoading(true);
     try {
       await authService.register(data);
-      toast.success("Compte créé avec succès ! Veuillez vous connecter.");
+      toast.success("Compte créé avec succès ! Connectez-vous.");
       router.push("/login");
     } catch (error) {
       const errorMsg =
